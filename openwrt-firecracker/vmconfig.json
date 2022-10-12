@@ -18,12 +18,12 @@
   ],
   "network-interfaces": [
     {
-      "host_dev_name": "tap0",
+      "host_dev_name": "ow0eth0",
       "iface_id": "eth0",
       "guest_mac": "02:fc:00:00:00:05"
     },
     {
-      "host_dev_name": "tap1",
+      "host_dev_name": "ow0eth1",
       "iface_id": "eth1",
       "guest_mac": "02:fc:00:00:00:06"
     }

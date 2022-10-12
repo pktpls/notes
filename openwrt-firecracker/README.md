@@ -7,6 +7,8 @@ Boots in five seconds. There are a number of large sleeps in the OpenWrt boot pr
 - [DHCP for eth1 / wan](#dhcp-for-eth1-wan)
 - [VLANs](#vlans)
 - [Multiple VMs](#multiple-vms)
+- [Systemd service](#systemd-service)
+- [Rootless](#rootless)
 
 ### Requirements
 
@@ -35,14 +37,14 @@ gunzip rootfs.img.gz
 
 On simple x86-64 systems such as VMs, OpenWrt automatically uses the `eth0` interface for the `lan` bridge and, if present, `eth1` for `wan`/`wan6`.
 
-Create host-side interfaces for the VM's eth0/lan and eth1/wan interfaces. The interface names must match what's specified in `vmconfig.json` - `tap0` will be used as `eth0` and `tap1` as `eth1`. (The address on `tap0` can alternatively also be obtained via DHCP from OpenWrt, for example using `dhclient` or NetworkManager.)
+Create host-side interfaces for the VM's eth0/lan and eth1/wan interfaces. The interface names must match what's specified in `vmconfig.json` - `ow0eth0` will be used as `eth0` and `ow0eth1` as `eth1`. (The address on `ow0eth0` can alternatively also be obtained via DHCP from OpenWrt, for example using `dhclient` or NetworkManager.)
 ```sh
-sudo ip tuntap add dev tap0 mode tap
-sudo ip tuntap add dev tap1 mode tap
-sudo ip addr add 10.0.1.2/24 dev tap0
-sudo ip addr add 10.0.42.1/24 dev tap1
-sudo ip link set dev tap0 up
-sudo ip link set dev tap1 up
+ip tuntap add dev ow0eth0 mode tap
+ip tuntap add dev ow0eth1 mode tap
+ip addr add 192.168.1.2/24 dev ow0eth0
+ip addr add 10.0.1.1/24 dev ow0eth1
+ip link set dev ow0eth0 up
+ip link set dev ow0eth1 up
 ```
 
 Create the VM configuration.
@@ -65,12 +67,12 @@ cat vmconfig.json
     {
       "iface_id": "eth0",
       "guest_mac": "02:fc:00:00:00:05",
-      "host_dev_name": "tap0"
+      "host_dev_name": "ow0eth0"
     },
     {
       "iface_id": "eth1",
       "guest_mac": "02:fc:00:00:00:06",
-      "host_dev_name": "tap1"
+      "host_dev_name": "ow0eth1"
     }
   ],
   "machine-config": {
@@ -88,8 +90,8 @@ sudo firecracker --no-api --config-file ./vmconfig.json
 
 Now the host can already ping the guest's `lan` bridge, and vice versa.
 ```sh
-ping 10.0.1.1
-ssh root@10.0.1.1 ping 10.0.1.2
+ping 192.168.1.1
+ssh root@192.168.1.1 ping 192.168.1.2
 ```
 
 To stop the VM, you use `reboot` inside (see known issues) or `kill` outside.
@@ -101,7 +103,7 @@ sudo killall firecracker
 
 To get the VM's `wan` interface up, again in a separate shell, start the host's DHCP server for the guest. The `-d` option enables debug mode, so dnsmasq prints the incoming DHCP requests. If you want the VM to have Internet access, you'd also need to enable forwarding and possibly NAT/masquerading separately.
 ```sh
-sudo dnsmasq -d --bind-interfaces --listen-address=10.0.123.1 --dhcp-range=10.0.123.10,10.0.123.100
+sudo dnsmasq -d --bind-interfaces --listen-address=10.0.1.1 --dhcp-range=10.0.1.10,10.0.1.100
 ```
 
 ## VLANs
@@ -110,9 +112,9 @@ Because TAP interfaces carry Ethernet frames (while TUN interfaces carry IP pack
 
 On the host:
 ```sh
-sudo ip link add link tap0 name tap0.foo type vlan id 42
-sudo ip addr add 10.42.0.2/24 dev tap0.foo
-sudo ip link set tap0.foo up
+sudo ip link add link ow0eth0 name ow0eth0.foo type vlan id 42
+sudo ip addr add 10.42.0.2/24 dev ow0eth0.foo
+sudo ip link set ow0eth0.foo up
 ```
 
 In the VM:
@@ -134,12 +136,45 @@ Each VM needs its own TAP interfaces and `vmconfig.json` file.
 
 If you want to run multiple VMs with a bridge connecting their TAP interfaces, you'd need to enable ARP proxying so the VMs can see each other via the host.
 ```sh
-sudo sysctl net.ipv4.conf.tap0.proxy_arp=1 # optional
+sudo sysctl net.ipv4.conf.ow0eth0.proxy_arp=1 # optional
 ```
+
+## Systemd
+
+TODO
+
 
 ## Without root
 
-It might be possible to run Firecracker without root, by utilizing rootless Podman with KVM in the container: https://stackoverflow.com/questions/48422001/how-to-launch-qemu-kvm-from-inside-a-docker-container && https://github.com/containers/podman/blob/main/docs/tutorials/rootless_tutorial.md && https://github.com/containers/podman/blob/main/rootless.md
+Read the Podman documentation to understand the limitations of rootless containers: https://github.com/containers/podman/blob/main/docs/tutorials/rootless_tutorial.md && https://github.com/containers/podman/blob/main/rootless.md
+
+The rootfs ext4 partition file needs to be unique per VM. It is readwrite and persistent.
+
+```
+podman run -it -v "$(pwd):/workdir:Z" --user=root --userns=keep-id --device=/dev/kvm --device=/dev/net/tun --security-opt="label=disable" --cap-add=NET_ADMIN --cap-add=NET_RAW --network=slirp4netns:mtu=1500 alpine
+
+echo https://dl-cdn.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
+apk add iproute2 bridge-utils mtr openssh-client firecracker wget tcpdump
+
+ip tuntap add dev ow0eth0 mode tap
+ip addr add 192.168.1.2/24 dev ow0eth0
+ip link set dev ow0eth0 up
+ip tuntap add dev ow0eth1 mode tap
+ip link set dev ow0eth1 up
+brctl addbr wan
+brctl addif wan tap0
+brctl addif wan ow0eth1
+ip link set up dev wan
+
+ip route del `ip r | grep '24 dev tap0'`
+ip route del `ip r | grep 'default'`
+ip route add 10.0.2.0/24 dev wan
+ip route add default via 10.0.2.2 dev wan
+
+cd /workdir && firecracker --no-api --no-seccomp --config-file vmconfig.json
+
+podman exec -it <name> ssh root@192.168.1.1
+```
 
 ---
 
