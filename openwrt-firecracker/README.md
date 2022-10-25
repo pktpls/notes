@@ -1,7 +1,7 @@
 
 # OpenWrt in a Firecracker Micro VM
 
-Boots in five seconds. There are a number of large sleeps in the OpenWrt boot process that can probably be avoided in a VM (no actual hardware to wait for).
+Boots in less than five seconds.
 
 - [Basic usage](#basic-usage)
 - [DHCP for eth1 / wan](#dhcp-for-eth1-wan)
@@ -9,6 +9,7 @@ Boots in five seconds. There are a number of large sleeps in the OpenWrt boot pr
 - [Multiple VMs](#multiple-vms)
 - [Systemd service](#systemd-service)
 - [Rootless](#rootless)
+- [Make it even faster](#make-it-even-faster)
 
 ### Requirements
 
@@ -143,7 +144,6 @@ sudo sysctl net.ipv4.conf.ow0eth0.proxy_arp=1 # optional
 
 TODO
 
-
 ## Without root
 
 Read the Podman documentation to understand the limitations of rootless containers: https://github.com/containers/podman/blob/main/docs/tutorials/rootless_tutorial.md && https://github.com/containers/podman/blob/main/rootless.md
@@ -151,10 +151,17 @@ Read the Podman documentation to understand the limitations of rootless containe
 The rootfs ext4 partition file needs to be unique per VM. It is readwrite and persistent.
 
 ```
-podman run -it -v "$(pwd):/workdir:Z" --user=root --userns=keep-id --device=/dev/kvm --device=/dev/net/tun --security-opt="label=disable" --cap-add=NET_ADMIN --cap-add=NET_RAW --network=slirp4netns:mtu=1500 alpine
+# need rootfs.img, vmlinux, vmconfig.json in same directory.
 
+podman run -it --name=openwrt -v "$(pwd):/workdir:Z" --user=root --userns=keep-id \
+  --security-opt="label=disable" --cap-add=NET_ADMIN --cap-add=NET_RAW \ --network=slirp4netns:mtu=1500 --device=/dev/kvm --device=/dev/net/tun \
+  alpine:edge
+
+# in the container:
+
+apk add iproute2 bridge-utils mtr openssh-client wget tcpdump
 echo https://dl-cdn.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
-apk add iproute2 bridge-utils mtr openssh-client firecracker wget tcpdump
+apk add firecracker
 
 ip tuntap add dev ow0eth0 mode tap
 ip addr add 192.168.1.2/24 dev ow0eth0
@@ -173,8 +180,19 @@ ip route add default via 10.0.2.2 dev wan
 
 cd /workdir && firecracker --no-api --no-seccomp --config-file vmconfig.json
 
-podman exec -it <name> ssh root@192.168.1.1
+# in another shell:
+
+podman exec -it openwrt ssh root@192.168.1.1
 ```
+
+## Make it even faster
+
+A few large sleeps in OpenWrt's boot process can be eliminated:
+
+- Disable failsafe mode (3 seconds)
+- Disable debug mode (1 second)
+- Optimize Tunnelmanager br-uplink bringup (1.5 seconds)
+- Optimize input device detection (0.5 seconds)
 
 ---
 

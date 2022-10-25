@@ -1,0 +1,19 @@
+[Unit]
+Description=Test Firecracker VM
+Wants=network.target
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/firecracker --no-api --config-file vmconfig.json
+WorkingDirectory=/home/user/w/notes/openwrt-firecracker
+Restart=always
+
+ExecStartPre=/usr/sbin/ip tuntap add dev openwrt0-lan mode tap
+ExecStartPre=/usr/sbin/ip link set dev openwrt0-lan up
+ExecStartPre=/usr/sbin/ip addr add 192.168.1.2/24 dev openwrt0-lan
+ExecStartPre=/usr/sbin/ip tuntap add dev openwrt0-wan mode tap
+ExecStartPre=/usr/sbin/ip link set dev openwrt0-wan up
+ExecStartPre=/usr/sbin/ip addr add 10.0.42.1/24 dev openwrt0-wan
+
+ExecStopPost=/usr/sbin/ip link del openwrt0-lan
+ExecStopPost=/usr/sbin/ip link del openwrt0-wan
