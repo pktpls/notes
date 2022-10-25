@@ -154,7 +154,8 @@ The rootfs ext4 partition file needs to be unique per VM. It is readwrite and pe
 # need rootfs.img, vmlinux, vmconfig.json in same directory.
 
 podman run -it --name=openwrt -v "$(pwd):/workdir:Z" --user=root --userns=keep-id \
-  --security-opt="label=disable" --cap-add=NET_ADMIN --cap-add=NET_RAW \ --network=slirp4netns:mtu=1500 --device=/dev/kvm --device=/dev/net/tun \
+  --security-opt="label=disable" --cap-add=NET_ADMIN --cap-add=NET_RAW \
+  --network=slirp4netns:mtu=1500 --device=/dev/kvm --device=/dev/net/tun \
   alpine:edge
 
 # in the container:
