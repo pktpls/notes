@@ -1,0 +1,19 @@
+[Unit]
+Description=Test Firecracker VM
+Wants=network.target
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/firecracker --no-api --config-file vmconfig.json
+WorkingDirectory=/home/user/w/notes/firecracker-systemd/
+Restart=always
+
+ExecStartPre=/usr/sbin/ip tuntap add dev testvm-lan mode tap
+ExecStartPre=/usr/sbin/ip link set dev testvm-lan up
+ExecStartPre=/usr/sbin/ip addr add 192.168.1.2/24 dev testvm-lan
+ExecStartPre=/usr/sbin/ip tuntap add dev testvm-wan mode tap
+ExecStartPre=/usr/sbin/ip link set dev testvm-wan up
+ExecStartPre=/usr/sbin/ip addr add 10.0.42.1/24 dev testvm-wan
+
+ExecStopPost=/usr/sbin/ip link del testvm-lan
+ExecStopPost=/usr/sbin/ip link del testvm-wan

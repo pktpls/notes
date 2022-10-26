@@ -1,0 +1,31 @@
+{
+  "machine-config": {
+    "vcpu_count": 1,
+    "mem_size_mib": 128,
+    "smt": false
+  },
+  "boot-source": {
+    "kernel_image_path": "./vmlinux",
+    "boot_args": "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules random.trust_cpu=on i8042.noaux"
+  },
+  "drives": [
+    {
+      "drive_id": "rootfs",
+      "path_on_host": "./rootfs.img",
+      "is_root_device": true,
+      "is_read_only": false
+    }
+  ],
+  "network-interfaces": [
+    {
+      "host_dev_name": "testvm-lan",
+      "iface_id": "eth0",
+      "guest_mac": "02:fc:00:00:00:05"
+    },
+    {
+      "host_dev_name": "testvm-wan",
+      "iface_id": "eth1",
+      "guest_mac": "02:fc:00:00:00:06"
+    }
+  ]
+}
